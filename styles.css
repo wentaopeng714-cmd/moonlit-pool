@@ -49,3 +49,45 @@
   .hand-camera-active .scene-tools { left: 15px; right: auto; top: 36%; }
   .hand-camera-active .scene-caption { display: none; }
 }
+
+.hand-camera { pointer-events: none; }
+.hand-camera-head button { pointer-events: auto; }
+.gesture-menu-entry {
+  display: none; position: fixed; top: 75px; left: calc(var(--side) + 30px);
+  z-index: 11; padding: 8px 12px; border: 1px solid #9d8a65; border-radius: 4px;
+  color: #eadcc1; background: #172925; font-size: 12px;
+}
+.hand-camera-active .gesture-menu-entry { display: block; }
+.gesture-menu-entry.aim, .gesture-options-grid button.aim {
+  border-color: #adf8d9; background: #25453b; color: #f1ffeb;
+  box-shadow: 0 0 10px #8cf4cc66;
+}
+.gesture-options {
+  position: fixed; z-index: 11; top: 50%; left: calc(var(--side) + (100% - var(--side)) / 2);
+  translate: -50% -50%; width: min(410px, calc(100% - var(--side) - 36px));
+  background: #142522; border: 1px solid #9d8a65; border-radius: 8px; padding: 14px;
+  color: #efe2c4; box-shadow: 0 12px 36px #0008;
+}
+.gesture-options[hidden] { display: none; }
+.gesture-options header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.gesture-options header strong { font-size: 16px; }
+.gesture-options header small { color: #c2c9b7; font-size: 10px; }
+.gesture-options-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 7px; }
+.gesture-options-grid button {
+  min-height: 47px; padding: 4px; border: 1px solid #768575;
+  border-radius: 4px; color: #f1e7cf; background: #20312c; font-size: 12px;
+}
+.gesture-options-grid button:hover { border-color: #adf8d9; }
+.hand-water-cursor.stirring {
+  width: 28px; height: 28px; border-color: #d2ffed;
+  background: #9affdb44; box-shadow: 0 0 16px #9dffeaaa, inset 0 0 8px #9dffea65;
+}
+@media (max-width: 700px) {
+  .gesture-menu-entry { left: 15px; }
+  #ui.editing { z-index: 16; }
+  .editing .atelier { z-index: 16; width: min(300px, calc(100vw - 48px)); }
+  .editing .mobile-toggle { z-index: 17; left: min(309px, calc(100vw - 39px)); }
+  #ui.editing ~ .gesture-menu-entry { display: none; }
+}
+.gesture-menu-entry, .gesture-options-grid button, .atelier button, .mobile-toggle { touch-action: manipulation; }
+.recipe-body { touch-action: pan-y; overscroll-behavior: contain; }

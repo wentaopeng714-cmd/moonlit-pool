@@ -24,7 +24,7 @@ export class HandInput {
     const dt = this.at === null ? 0 : (now - this.at) / 1000;
     const u = clamp((0.88 - tip.x) / 0.76, 0, 1);
     const v = clamp((tip.y - 0.12) / 0.76, 0, 1);
-    const a = this.x === null ? 1 : 1 - Math.exp(-Math.max(dt, 0) / 0.065);
+    const a = this.x === null ? 1 : 1 - Math.exp(-Math.max(dt, 0) / 0.045);
     this.x = this.x === null ? u : this.x + a * (u - this.x);
     this.y = this.y === null ? v : this.y + a * (v - this.y);
     this.at = now;

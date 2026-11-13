@@ -13,7 +13,7 @@ async function createDetector() {
   });
 }
 
-export function installHandCamera({ button, onHand }) {
+export function installHandCamera({ button, onHand, onStop }) {
   const panel = document.createElement('aside');
   panel.className = 'hand-camera';
   panel.hidden = true;
@@ -21,7 +21,7 @@ export function installHandCamera({ button, onHand }) {
   panel.innerHTML = `
     <div class="hand-camera-head"><span><i aria-hidden="true"></i> 镜像预览</span><button type="button" aria-label="关闭摄像头">×</button></div>
     <div class="hand-camera-view"><video autoplay muted playsinline aria-label="你的实时摄像头画面"></video><canvas aria-hidden="true"></canvas></div>
-    <div class="hand-camera-help">食指移动搅水 · 捏合投香</div>`;
+    <div class="hand-camera-help">食指划水 · 捏合投香</div>`;
   const notice = document.createElement('div');
   notice.className = 'hand-camera-notice';
   notice.setAttribute('role', 'status');
@@ -35,7 +35,7 @@ export function installHandCamera({ button, onHand }) {
   const ctx = overlay.getContext('2d');
   const input = new HandInput();
   let stream, detector, frame = 0, generation = 0, lastFrame = -1, lastTick = -Infinity;
-  let mode = 'idle', noticeTimer;
+  let mode = 'idle', noticeTimer, inferenceInterval = 36;
 
   function showNotice(message) {
     clearTimeout(noticeTimer);
@@ -71,6 +71,7 @@ export function installHandCamera({ button, onHand }) {
     input.reset();
     ctx.clearRect(0, 0, overlay.width, overlay.height);
     onHand(null);
+    onStop?.();
     setMode('idle');
     showNotice(message);
   }
@@ -99,15 +100,17 @@ export function installHandCamera({ button, onHand }) {
   function tick(now) {
     if (mode !== 'live') return;
     frame = requestAnimationFrame(tick);
-    if (video.readyState < 2 || video.currentTime === lastFrame || now - lastTick < 40) return;
+    if (video.readyState < 2 || video.currentTime === lastFrame || now - lastTick < inferenceInterval) return;
     lastTick = now;
     lastFrame = video.currentTime;
     try {
+      const started = performance.now();
       const points = detector.detectForVideo(video, now).landmarks[0];
+      inferenceInterval = Math.max(36, Math.min(115, (performance.now() - started) * 2.7));
       const hand = input.update(points, now, video.videoWidth / video.videoHeight);
       draw(points, hand?.closed);
       onHand(hand);
-      status(hand ? (hand.closed ? '已捏合 · 松手可再投' : '食指移动搅水 · 捏合投香') : '把一只手举到镜头前');
+      status(hand ? (hand.closed ? '已捏合 · 松手可再投' : '划水 · 捏合投香') : '把一只手举到镜头前');
     } catch (err) {
       console.warn('Hand tracking stopped:', err);
       stop('手势识别已停止，可以重试或继续用触屏。');

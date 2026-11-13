@@ -12,6 +12,7 @@ import { Steam } from './steam.js';
 import { Audio } from './audio.js';
 import { UI } from './ui.js';
 import { installHandCamera } from './hand-camera.js';
+import { createHandMenu } from './hand-menu.js';
 import { PALETTES, PRESETS, designFromPreset, randomDesign, normalizeDesign } from './presets.js';
 import { WATER_Y, TUB, tubDist } from './config.js';
 
@@ -360,17 +361,18 @@ function waterHit(e) {
   if (room.Tray && ray.intersectObject(room.Tray, true).length) return null;
   return hitP.clone();
 }
-function stirWater(from, to, seconds) {
+function stirWater(from, to, seconds, gesture = false) {
   const dt = Math.max(seconds, 1 / 120);
   let vx = (to.x - from.x) / dt, vz = (to.z - from.z) / dt;
-  const sp = Math.hypot(vx, vz), mx = 0.6;
+  if (gesture) { vx *= 2.1; vz *= 2.1; }
+  const sp = Math.hypot(vx, vz), mx = gesture ? 1.45 : 0.6;
   if (sp > mx) { vx *= mx / sp; vz *= mx / sp; }
   // stir along the stroke: several splats between the last and current point
-  const n = Math.min(4, 1 + Math.floor(Math.hypot(to.x - from.x, to.z - from.z) / 0.015));
+  const n = Math.min(gesture ? 6 : 4, 1 + Math.floor(Math.hypot(to.x - from.x, to.z - from.z) / 0.015));
   for (let i = 1; i <= n; i++) {
     const x = from.x + (to.x - from.x) * i / n, z = from.z + (to.z - from.z) * i / n;
-    fluid.setVel(x, z, 0.024, vx * 0.85, vz * 0.85, 0.35);
-    fluid.addRipple(x, z, 0.01, 0.00035 * Math.min(sp / 0.3, 1.5));
+    fluid.setVel(x, z, gesture ? .073 : .024, vx * .85, vz * .85, gesture ? .76 : .35);
+    fluid.addRipple(x, z, gesture ? .023 : .01, (gesture ? .00115 : .00035) * Math.min(sp / .3, 1.5));
   }
   // nudge floating bombs near the finger
   for (const b of bombs) if (b.state === 'floating' && Math.hypot(b.pos.x - to.x, b.pos.z - to.z) < 0.08) { b.vel.x += vx * 0.08; b.vel.z += vz * 0.08; b.angVel.y += (Math.random() - 0.5) * 2; }
@@ -416,10 +418,13 @@ document.body.append(handCursor);
 const handWorld = new THREE.Vector3(), handNdc = new THREE.Vector3();
 const handCorners = Array.from({ length: 4 }, () => new THREE.Vector3());
 const handRay = new THREE.Raycaster();
-let lastHand = null;
+const handMenu = createHandMenu(ui);
+let lastHand = null, handStrokeTime = 0;
 function handleHand(hand) {
-  if (!hand || drain.phase !== 'idle' || ui.root.classList.contains('editing') || document.querySelector('dialog[open]')) {
-    lastHand = null; handCursor.hidden = true; return;
+  const editing = ui.root.classList.contains('editing') || document.querySelector('dialog[open]');
+  const inMenu = handMenu.handle(editing ? null : hand);
+  if (!hand || inMenu || editing || drain.phase !== 'idle') {
+    lastHand = null; handStrokeTime = 0; handCursor.hidden = true; return;
   }
   const y = fluid.waterY;
   for (let i = 0; i < 4; i++) {
@@ -427,7 +432,7 @@ function handleHand(hand) {
   }
   const left = Math.min(...handCorners.map(p => p.x)), right = Math.max(...handCorners.map(p => p.x));
   const bottom = Math.min(...handCorners.map(p => p.y)), top = Math.max(...handCorners.map(p => p.y));
-  ndc.set(THREE.MathUtils.lerp(left, right, hand.u), THREE.MathUtils.lerp(top, bottom, hand.v));
+  ndc.set(THREE.MathUtils.lerp(left, right, hand.u), THREE.MathUtils.lerp(top, bottom, (hand.v - .14) / .86));
   handRay.setFromCamera(ndc, camera);
   plane.constant = -y;
   if (!handRay.ray.intersectPlane(plane, handWorld)) { lastHand = null; handCursor.hidden = true; return; }
@@ -445,12 +450,27 @@ function handleHand(hand) {
     fluid.addRipple(handWorld.x, handWorld.z, .018, .0008);
     handCursor.animate([{scale: '.72'}, {scale: '1.7', opacity: .4}, {scale: '1', opacity: 1}], 320);
   }
-  if (!hand.closed && lastHand && hand.dt > 0 && handWorld.distanceTo(lastHand) > .004) {
-    stirWater(lastHand, handWorld, hand.dt);
+  let stirring = false;
+  if (hand.closed || !hand.dt) {
+    lastHand = null;
+    handStrokeTime = 0;
+  } else if (!lastHand) {
+    lastHand = handWorld.clone();
+  } else {
+    handStrokeTime += hand.dt;
+    if (handWorld.distanceTo(lastHand) > .0035) {
+      stirWater(lastHand, handWorld, Math.min(handStrokeTime, .12), true);
+      lastHand.copy(handWorld);
+      handStrokeTime = 0;
+      stirring = true;
+    } else if (handStrokeTime > .12) {
+      lastHand.copy(handWorld);
+      handStrokeTime = 0;
+    }
   }
-  lastHand = hand.closed ? null : (lastHand ?? new THREE.Vector3()).copy(handWorld);
+  handCursor.classList.toggle('stirring', stirring);
 }
-installHandCamera({ button: ui.root.querySelector('.hand-camera-toggle'), onHand: handleHand });
+installHandCamera({ button: ui.root.querySelector('.hand-camera-toggle'), onHand: handleHand, onStop: handMenu.close });
 
 window.addEventListener('keydown', (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest?.('button,a,input,dialog')) return;
