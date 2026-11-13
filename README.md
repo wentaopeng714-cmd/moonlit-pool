@@ -33,3 +33,9 @@ This is a remix of [Techartist’s bath-bomb-builder](https://github.com/iamtech
 Original project: Copyright (c) 2026 Techartist. See [LICENSE](LICENSE).
 
 Three.js: Copyright 2010–2026 Three.js Authors. See [vendor/LICENSE](vendor/LICENSE).
+
+## Front camera gestures
+
+Click the camera icon labeled **手势** and allow camera access. Phones request the front-facing camera; desktop browsers use an available webcam. The mirrored preview stays visible alongside the pool. Move your index finger to stir and pinch your thumb and index finger to drop a bath bomb. Open the pinch to drop again. Click × to release the camera. Touch and mouse controls work without a camera.
+
+Camera access requires HTTPS or localhost. The camera is off by default. Video frames and hand landmarks are processed locally, with no recording or upload. The [MediaPipe Hand Landmarker](https://developers.google.com/edge/mediapipe/solutions/vision/hand_landmarker?tab=Web) runtime (0.10.21) and model (Hand Landmarker float16, v1) are loaded only when the camera is enabled and distributed under [Apache 2.0](vendor/mediapipe/LICENSE).

@@ -11,6 +11,7 @@ import { Floaters } from './floaters.js';
 import { Steam } from './steam.js';
 import { Audio } from './audio.js';
 import { UI } from './ui.js';
+import { installHandCamera } from './hand-camera.js';
 import { PALETTES, PRESETS, designFromPreset, randomDesign, normalizeDesign } from './presets.js';
 import { WATER_Y, TUB, tubDist } from './config.js';
 
@@ -359,6 +360,22 @@ function waterHit(e) {
   if (room.Tray && ray.intersectObject(room.Tray, true).length) return null;
   return hitP.clone();
 }
+function stirWater(from, to, seconds) {
+  const dt = Math.max(seconds, 1 / 120);
+  let vx = (to.x - from.x) / dt, vz = (to.z - from.z) / dt;
+  const sp = Math.hypot(vx, vz), mx = 0.6;
+  if (sp > mx) { vx *= mx / sp; vz *= mx / sp; }
+  // stir along the stroke: several splats between the last and current point
+  const n = Math.min(4, 1 + Math.floor(Math.hypot(to.x - from.x, to.z - from.z) / 0.015));
+  for (let i = 1; i <= n; i++) {
+    const x = from.x + (to.x - from.x) * i / n, z = from.z + (to.z - from.z) * i / n;
+    fluid.setVel(x, z, 0.024, vx * 0.85, vz * 0.85, 0.35);
+    fluid.addRipple(x, z, 0.01, 0.00035 * Math.min(sp / 0.3, 1.5));
+  }
+  // nudge floating bombs near the finger
+  for (const b of bombs) if (b.state === 'floating' && Math.hypot(b.pos.x - to.x, b.pos.z - to.z) < 0.08) { b.vel.x += vx * 0.08; b.vel.z += vz * 0.08; b.angVel.y += (Math.random() - 0.5) * 2; }
+  stirLevel = Math.min(1, stirLevel + sp * 0.4);
+}
 const ptr = { id: -1, mode: '', x: 0, y: 0, t: 0, last: null, lt: 0, moved: 0 };
 canvas.addEventListener('pointerdown', (e) => {
   audio.start();
@@ -377,22 +394,7 @@ canvas.addEventListener('pointermove', (e) => {
   if (ptr.mode === 'orbit') { rig.orbit(dx, dy); return; }
   const h = waterHit(e);
   const now = performance.now();
-  if (h && ptr.last && ptr.moved > 6) {
-    const dt = Math.max((now - ptr.lt) / 1000, 1 / 120);
-    let vx = (h.x - ptr.last.x) / dt, vz = (h.z - ptr.last.z) / dt;
-    const sp = Math.hypot(vx, vz), mx = 0.6;
-    if (sp > mx) { vx *= mx / sp; vz *= mx / sp; }
-    // stir along the stroke: several splats between the last and current point
-    const n = Math.min(4, 1 + Math.floor(Math.hypot(h.x - ptr.last.x, h.z - ptr.last.z) / 0.015));
-    for (let i = 1; i <= n; i++) {
-      const x = ptr.last.x + (h.x - ptr.last.x) * i / n, z = ptr.last.z + (h.z - ptr.last.z) * i / n;
-      fluid.setVel(x, z, 0.024, vx * 0.85, vz * 0.85, 0.35);
-      fluid.addRipple(x, z, 0.01, 0.00035 * Math.min(sp / 0.3, 1.5));
-    }
-    // nudge floating bombs near the finger
-    for (const b of bombs) if (b.state === 'floating' && Math.hypot(b.pos.x - h.x, b.pos.z - h.z) < 0.08) { b.vel.x += vx * 0.08; b.vel.z += vz * 0.08; b.angVel.y += (Math.random() - 0.5) * 2; }
-    stirLevel = Math.min(1, stirLevel + sp * 0.4);
-  }
+  if (h && ptr.last && ptr.moved > 6) stirWater(ptr.last, h, (now - ptr.lt) / 1000);
   if (h) { ptr.last = h; ptr.lt = now; }
 });
 function endPtr(e) {
@@ -405,6 +407,51 @@ function endPtr(e) {
 }
 canvas.addEventListener('pointerup', endPtr);
 canvas.addEventListener('pointercancel', endPtr);
+// Map the mirrored finger into the pool's visible footprint, regardless of camera angle.
+const handCursor = document.createElement('div');
+handCursor.className = 'hand-water-cursor';
+handCursor.hidden = true;
+handCursor.setAttribute('aria-hidden', 'true');
+document.body.append(handCursor);
+const handWorld = new THREE.Vector3(), handNdc = new THREE.Vector3();
+const handCorners = Array.from({ length: 4 }, () => new THREE.Vector3());
+const handRay = new THREE.Raycaster();
+let lastHand = null;
+function handleHand(hand) {
+  if (!hand || drain.phase !== 'idle' || ui.root.classList.contains('editing') || document.querySelector('dialog[open]')) {
+    lastHand = null; handCursor.hidden = true; return;
+  }
+  const y = fluid.waterY;
+  for (let i = 0; i < 4; i++) {
+    handCorners[i].set(i & 1 ? .48 : -.52, y, i & 2 ? .22 : -.22).project(camera);
+  }
+  const left = Math.min(...handCorners.map(p => p.x)), right = Math.max(...handCorners.map(p => p.x));
+  const bottom = Math.min(...handCorners.map(p => p.y)), top = Math.max(...handCorners.map(p => p.y));
+  ndc.set(THREE.MathUtils.lerp(left, right, hand.u), THREE.MathUtils.lerp(top, bottom, hand.v));
+  handRay.setFromCamera(ndc, camera);
+  plane.constant = -y;
+  if (!handRay.ray.intersectPlane(plane, handWorld)) { lastHand = null; handCursor.hidden = true; return; }
+  handWorld.x = THREE.MathUtils.clamp(handWorld.x, -.55, .45);
+  handWorld.z = THREE.MathUtils.clamp(handWorld.z, -.225, .225);
+  const radius = Math.hypot(handWorld.x / .56, handWorld.z / .245);
+  if (radius > 1) { handWorld.x /= radius; handWorld.z /= radius; }
+  const r = canvas.getBoundingClientRect();
+  handNdc.copy(handWorld).project(camera);
+  handCursor.style.left = r.left + (handNdc.x + 1) * r.width / 2 + 'px';
+  handCursor.style.top = r.top + (1 - handNdc.y) * r.height / 2 + 'px';
+  handCursor.hidden = false;
+  handCursor.classList.toggle('pinched', hand.closed);
+  if (hand.drop && dropAt(handWorld.x, handWorld.z)) {
+    fluid.addRipple(handWorld.x, handWorld.z, .018, .0008);
+    handCursor.animate([{scale: '.72'}, {scale: '1.7', opacity: .4}, {scale: '1', opacity: 1}], 320);
+  }
+  if (!hand.closed && lastHand && hand.dt > 0 && handWorld.distanceTo(lastHand) > .004) {
+    stirWater(lastHand, handWorld, hand.dt);
+  }
+  lastHand = hand.closed ? null : (lastHand ?? new THREE.Vector3()).copy(handWorld);
+}
+installHandCamera({ button: ui.root.querySelector('.hand-camera-toggle'), onHand: handleHand });
+
 window.addEventListener('keydown', (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest?.('button,a,input,dialog')) return;
   const k = e.key.toLowerCase();
